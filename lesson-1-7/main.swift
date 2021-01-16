@@ -31,7 +31,7 @@ extension AutomatedTellerMachineError: LocalizedError {
         switch self {
         case .notRecognized: return "Карта не распознана"
         case .invalidPincode: return "Неверный пин-код"
-        case let .insufficientFunds(needFunds): return "Недостаточно середств \(needFunds)"
+        case let .insufficientFunds(needFunds): return "Недостаточно средств \(needFunds)"
         case .noMoneyAtm: return "Недостаточно средств в банкомате"
         case .noSuchCurrency: return "Данная валюта не поддерживается АТМ"
         case .noIssuer: return "АТМ не поддерживает эмитент карты"
