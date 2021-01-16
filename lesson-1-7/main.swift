@@ -4,19 +4,17 @@
 //
 //  Created by MacBook on 12.01.2021.
 //
-
 import Foundation
 
 struct Card {
     var nameBank: String
     var balance: Double
-    var periodValidity: String
     var pinCode: Int
     var currency: String
 }
 extension Card: CustomStringConvertible {
      var description: String {
-        return "Эммитет карты: \(nameBank), Баланс карты: \(balance) \(currency)"
+        return "Эмитент карты: \(nameBank), Баланс карты: \(balance) \(currency)"
      }
  }
 
@@ -25,98 +23,141 @@ enum AutomatedTellerMachineError: Error {
     case invalidPincode
     case insufficientFunds(needFunds: Double)
     case noMoneyAtm
+    case noSuchCurrency
+    case noIssuer
 }
 extension AutomatedTellerMachineError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .notRecognized: return "Карта не распозннана"
-        case .invalidPincode: return "Невеный пин-код"
+        case .notRecognized: return "Карта не распознана"
+        case .invalidPincode: return "Неверный пин-код"
         case let .insufficientFunds(needFunds): return "Недостаточно середств \(needFunds)"
-        case .noMoneyAtm: return "Недостаточно середств в банкомате"
+        case .noMoneyAtm: return "Недостаточно средств в банкомате"
+        case .noSuchCurrency: return "Данная валюта не поддерживается АТМ"
+        case .noIssuer: return "АТМ не поддерживает эмитент карты"
         }
     }
 }
 
 // Релизовать класс CreditCardHolder
 class CreditCardHolder {
-    var cashBalanceRub: Double = 10000
-    var cashBalanceUsd: Double = 2000
+    var cashRub: Double = 10000
+    var cashUsd: Double = 0
     
     var creditCards: [String: Card] = [
-        "Карта 1": .init(nameBank: "Alfa Bank", balance: 100500, periodValidity: "07/2020", pinCode: 4567, currency: "RUB"),
-        "Карта 2": .init(nameBank: "SberBank", balance: 4000, periodValidity: "03/2025", pinCode: 4567, currency: "USD")
+        "Карта 1": .init(nameBank: "Alfa Bank", balance: 100500, pinCode: 4567, currency: "RUB"),
+        "Карта 2": .init(nameBank: "SberBank", balance: 4000, pinCode: 1920, currency: "USD"),
+        "Карта 3": .init(nameBank: "Saxo Bank", balance: 2000, pinCode: 3049, currency: "EUR"),
+        "Карта 4": .init(nameBank: "DenizBank Güzeloba", balance: 2000, pinCode: 3390, currency: "TRY")
     ]
 }
 
-// Релизовать класс Банкомата
+// Реализовать класс Банкомата
 class AutomatedTellerMachine: CreditCardHolder {
     
-    var quantityUsd:Double = 20000
-    var quantityRub:Double = 15000
+    var quantityUsd:Double = 20000  // Количество "USD" в банкомате
+    var quantityRub:Double = 15000  // Количество "RUB" в банкомате
+    let currency = ["RUB", "USD"]   // Принимаемые валюты
+    let namesBank = ["Alfa Bank", "SberBank", "Saxo Bank", "ВТБ", "Росбанк", "Tinkoff"] // Доступные эмитенты
     
-    func bank(Card name: String, cash: Double, pinCode: Int) -> (item: Card?, erorr: AutomatedTellerMachineError?) {
+    func bank(Card name: String, cash: Double, pinCode: Int) throws -> Card {
+        // Ошибка ката не распознона
         guard var card = creditCards[name] else {
-            return (nil, .notRecognized)
+            throw AutomatedTellerMachineError.notRecognized
         }
+        // Ошибка не верный пин-код
         guard card.pinCode == pinCode else {
-            return (nil, .invalidPincode)
+            throw AutomatedTellerMachineError.invalidPincode
         }
-        guard card.balance > cash else {
+        // Определим доступен эмитент банка
+        let iNamesBank = namesBank.firstIndex(of: card.nameBank)
+        guard iNamesBank != nil else {
+            throw AutomatedTellerMachineError.noIssuer
+        }
+        // Определим доступна запрашиваемая валюта
+        let iCurrency = currency.firstIndex(of: card.currency)
+        var cashBalance:Double = 0
+        var quantity:Double = 0
+        guard iCurrency != nil else {
+            throw AutomatedTellerMachineError.noSuchCurrency
+        }
+        // Ошибка недостатоный баланс на карте
+        guard card.balance >= cash else {
             let need = card.balance - cash
-            return (nil, .insufficientFunds(needFunds: need))
+            throw AutomatedTellerMachineError.insufficientFunds(needFunds: need)
+        }
+        // Определим с какой валютой сейчас работаем и достанем значения с переменных
+        if currency[iCurrency!] == "USD" {
+            cashBalance = cashUsd
+            quantity = quantityUsd
+        }
+        if currency[iCurrency!] == "RUB" {
+            cashBalance = cashRub
+            quantity = quantityRub
         }
         
-        if card.currency == "USD" {
-            if cash > 0 {
-                if cash <= quantityUsd {
-                    cashBalanceUsd += cash
-                    quantityUsd += cash
-                } else {
-                    return (nil, .noMoneyAtm)
-                }
+        if cash > 0 { // Обработаем запрос для внесение наличных в АТМ
+            if cash <= quantity {
+                cashBalance += cash
+                quantity += cash
             } else {
-                if cashBalanceUsd < -cash {
-                    let need = cashBalanceUsd + cash
-                    return (nil, .insufficientFunds(needFunds: need))
-                } else {
-                    cashBalanceUsd += cash
-                    quantityUsd -= cash
-                }
+                throw AutomatedTellerMachineError.noMoneyAtm // Не хватает средств в банкомате
             }
+        } else { // Обработаем запрос для получение наличных из АТМ
+            if cashBalance < -cash {
+                let need = cashBalance + cash
+                throw AutomatedTellerMachineError.insufficientFunds(needFunds: need) // Не хватает средств для внесение в банкомат
+            } else {
+                cashBalance += cash
+                quantity -= cash
+            }
+        }
+        // Вернем значение в переменные
+        if currency[iCurrency!] == "USD" {
+            cashUsd = cashBalance
+            quantityUsd = quantity
+        }
+        if currency[iCurrency!] == "RUB" {
+            cashRub = cashBalance
+            quantityRub = cashBalance
         }
         
-        if card.currency == "RUB" {
-            if cash > 0 {
-                cashBalanceRub += cash
-            } else {
-                if cashBalanceRub < -cash {
-                    let need = cashBalanceRub + cash
-                    return (nil, .insufficientFunds(needFunds: need))
-                } else {
-                    cashBalanceRub += cash
-                }
-            }
-        }
         card.balance -= cash
-        return (card, nil)
+        return card
     }
 }
-
+// Инициализируем экземпляр
 var atm = AutomatedTellerMachine()
-let operation1 = atm.bank(Card: "Карта 2", cash: 1000, pinCode: 4567)
 
-if let operation1 = operation1.item {
+// Проведем операции по картам
+do {
+    let operation1 = try atm.bank(Card: "Карта 1", cash: 1000, pinCode: 4567)
     print(operation1)
-} else if let error = operation1.erorr {
+} catch let error {
     print(error.localizedDescription)
 }
 
+do {
+    let operation2 = try atm.bank(Card: "Карта 2", cash: 2000, pinCode: 1920)
+    print(operation2)
+} catch let error {
+    print(error.localizedDescription)
+}
 
-//var operation2 = atm.bank(Card: "Карта 2", cash: 2000, pinCode: 4567)
-//print(operation2)
-//
-//
-//
+do {
+    let operation3 = try atm.bank(Card: "Карта 3", cash: 2000, pinCode: 3049)
+    print(operation3)
+} catch let error {
+    print(error.localizedDescription)
+}
 
-print("Налиных денег \(atm.cashBalanceRub) RUB")
-print("Налиных денег \(atm.cashBalanceUsd) USD")
+do {
+    let operation4 = try atm.bank(Card: "Карта 4", cash: 2000, pinCode: 3390)
+    print(operation4)
+} catch let error {
+    print(error.localizedDescription)
+}
+
+print("Налиных денег \(atm.cashRub) RUB")
+print("Налиных денег \(atm.cashUsd) USD")
+
